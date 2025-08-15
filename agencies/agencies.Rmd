@@ -1,0 +1,697 @@
+---
+title: "TidyTuesday FBI Crime Data: Agencies"
+date: "`r Sys.Date()`"
+output:
+  rmdformats::downcute:
+    toc_depth: 4
+    toc_expand: 2
+    self_contained: true
+    default_style: "light"
+    downcute_theme: "default"
+    css: "downcute.css"
+---
+
+
+```{r setup, include=FALSE}
+## Global options
+knitr::opts_chunk$set(cache = TRUE)
+```
+
+
+<br>
+
+## Environment Setup
+
+#### Activate Libraries
+
+```{r libraries, message=FALSE}
+library(dplyr)
+library(tibble)
+library(kableExtra)
+library(DT)
+library(readr)
+library(dlookr)
+library(pastecs)
+library(stringr)
+library(ggplot2)
+library(treemapify)
+library(paletteer)
+library(sf)
+library(usmap)
+library(tidyr)
+library(purrr)
+library(tigris)
+library(ggpattern)
+library(ggrepel)
+library(sessioninfo)
+```
+
+<br>
+
+<hr>
+
+<hr>
+
+<br>
+
+## Initial Data Set
+
+#### Read in data
+
+```{r agencies}
+agencies <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/main/data/2025/2025-02-18/agencies.csv')
+```
+
+<br>
+
+#### View the data set
+
+```{r viewAgenciesData}
+diagnose(agencies)
+```
+
+The `latitude` and `longitiude` columns are **numeric** data types,
+`nibrs_start_date` is a **date** data type, `is_nibrs` is a **logical**
+or Boolean (TRUE/FALSE) data type, and all the other columns are
+**character** datatypes. There are 1,947 **"NA"** for the latitude and
+longitude variables, 1,645 for the agency_type varibales, and 4,061 for the
+nibrs_start_date variables. Lastly, there are a total of nine agency
+types.
+
+<br>
+
+<hr>
+
+<hr>
+
+<br>
+
+## Aggregation: Agency Types
+
+#### Summary Subset
+
+I want to see a brief summary on agency type variations to answer, **How
+do agency types vary?**.
+
+```{r initialAgencySummary}
+agency_summary <- agencies %>% 
+  group_by(agency_type) %>% 
+  summarise(count = n()) %>%
+  mutate(percentage = count / sum(count) * 100)
+
+print(agency_summary)
+```
+
+There are more agencies by **"City"** with 11,385 of them, which makes
+up a 59.4% dominance across the country. There are four more types
+**("County", "Other State Agency", "State Police", and "University or
+College")** with a significant amount of agencies, one **("Other")**
+named type with an okay amount of agencies, one **("Tribal")** type
+which has a smaller amount of agencies, one **("Unknown")** named type
+with only a single agency, and one **("NA")** type that has 1,675
+un-categorized agencies. Making this column with a total of nine unique
+agency types.
+
+<br>
+
+<hr>
+
+<hr>
+
+<br>
+
+## Plots
+
+#### Summary bar plot
+
+I will use a basic bar plot *(flip to have categories on the y-axis)* to
+see the variations:
+
+```{r bar_plot, echo=FALSE}
+ggplot(agency_summary,
+       aes(x = reorder(agency_type, 
+                       -count), # sort bars frm > to <
+           y = count)) +
+  geom_bar(stat = "identity") +
+  coord_flip() + # flip axes cuz nicer
+  theme_minimal() # clean theme
+```
+
+This is an okay start, but it is very hard to see that the **"Unknown"**
+agency type has one agency. I think using a treemap for this
+`agency_summary` would be better for seeing the proportions and
+hierarchies across the nine agency types.
+
+<br>
+
+#### Treemap
+
+I'm going to use the *treemapify* package, just because it integrates
+with ggplot well.
+
+```{r treemap_1}
+ggplot(agency_summary,
+       aes(area = count,
+           fill = agency_type,
+           label = agency_type)) + 
+  geom_treemap() + # create the structure
+  geom_treemap_text(fontface = "bold",
+                    color = "white",
+                    place = "center",
+                    grow = TRUE,
+                    reflow = TRUE,
+                    size = 3) + 
+  theme_minimal()
+```
+
+This produced a catchy and clear treemap by default, but unfortunately,
+it did remove the **"Unknown"** agency type. Also the texts are outside
+of their nested rectangles and are slightly improperly formatted. I
+think shortening the longer names and concatenating the **"NA"** and
+**"Unknown"** values together as a single column, will also help to make
+the visual more appealing.
+
+<br>
+
+<hr>
+
+<hr>
+
+<br>
+
+## Testing
+
+#### Test Concatenation Values
+
+I'm going to test concatenating the `agency_type` values, **"Unknown"**
+and **"NA"** as mentioned previously.
+
+```{r condense_test}
+agency_summary <- agency_summary %>% 
+  mutate(agency_type = ifelse(agency_type %in% c("Unknown", NA),
+                              "Unclassified",
+                              agency_type)) %>% 
+  group_by(agency_type) %>% 
+  summarise(count = sum(count),
+            percentage = sum(percentage))
+
+print(agency_summary)
+```
+
+Now the summary has only eight unique agency types, instead of
+the nine previously outputted. I'll also shorten some of the agency type
+names.
+
+<br>
+
+#### Test Shortening Values
+
+Here are the three values where I'm shortening their names:
+  - **"Other State Agency"**
+  - **"State Police"**
+  - **"University or College"**
+
+```{r shortening_test}
+agency_summary <- agency_summary %>% 
+  mutate(agency_type = case_when(
+    agency_type == "Other State Agency" ~ "Sta.Agency",
+    agency_type == "State Police" ~ "Sta.Police",
+    agency_type == "University or College" ~ "Uni./College",
+    TRUE ~ agency_type
+  ))
+
+print(agency_summary)
+```
+
+Of course this worked and I could stop right here, but I feel I should
+give a quick note in regards to the naming convention I've used.
+
+I chose to shorten the **"state"** word to an **"Sta."** abbreviation,
+but I must say it was a bit challenging to find a way to abbreviate this
+place name off the top of my head, so naturally, I Googled it, and saw
+that *"St."* and *"Sta."* came up as solutions to my challenge.
+
+Given that the *"St."* is already being represented as *"Saint"* for the
+values in the `county` column; I went with the *"Sta."* abbreviation.
+
+Now, I'll implement both methods into the `agencies` data set.
+
+<br>
+
+<hr>
+
+<hr>
+
+<br>
+
+## Final Data Set
+
+#### Copy Main Data Set
+
+```{r df}
+df <- agencies %>% 
+  mutate(agency_type = ifelse(
+    agency_type %in% c("Unknown", NA),
+    "Unclassified",
+    agency_type)) %>% 
+  mutate(agency_type = case_when(
+    agency_type == "Other State Agency" ~ "Sta.Agency",
+    agency_type == "State Police" ~ "Sta.Police",
+    agency_type == "University or College" ~ "Uni./College",
+    TRUE ~ agency_type))
+
+diagnose(df)
+```
+
+<br>
+
+#### Glimpse the df Dataframe
+
+```{r df_tibble}
+as_tibble(df)
+```
+
+As you can see, the `county` column is in all capital letters.
+Obviously, this column needs to be normalized.
+
+<br>
+
+#### Column Normalization
+
+Here, I'm going to normalize the `county` column to title case and then
+view it.
+
+```{r county_col}
+df <- df %>% 
+  mutate(county = str_to_title(str_trim(county)))
+
+
+head(setdiff(df$county, 
+             agencies$county), 5)
+```
+
+<br>
+
+#### Unique Counties
+
+I would like to know, **how many unique counties are in the `county`
+column?**
+
+```{r unique_counties}
+unique_counties <- length(unique(df$county))
+
+print(unique_counties)
+```
+
+Well, there are **2,372** unique counties in the `df` data set. But,
+now I want to rename the `county` column to `state_county`.
+
+<br>
+
+#### Rename Column
+
+So, let's start with viewing the initial column names, and then I can do the
+transformation and view the final results.
+
+```{r df_colnames}
+colnames(df)
+
+df <- df %>% 
+  rename(state_county = county)
+
+colnames(df)
+```
+
+Great! The state county column has been renamed successfully.
+
+<br>
+
+#### Redo Summary Subset
+
+With the previous naming convention methods I need to redo the
+`agency_summary` table using the `df` data set as its source.
+
+```{r redoAgencySummary}
+agency_summary <- df %>% 
+  group_by(agency_type) %>% 
+  summarise(count = n()) %>%
+  mutate(percentage = count / sum(count) * 100)
+
+print(agency_summary)
+
+```
+
+As you can see, the final table has implemented all the cleaning nad normalizing
+successfully.
+
+<br>
+
+<hr>
+
+<hr>
+
+<br>
+
+## Viz: Treemap
+
+#### Final visualization
+
+With doing all the above I can make the final viz to answer the
+question, **How do agency types vary?**
+
+If you remember, there are eight unique agency types, so I'm going to
+first extract eight dynamic colors from the <ins>harmo.pal</ins> color
+scheme and display the hexadecimal values for them, too.
+
+```{r harmo_colors}
+harmo_colors <- paletteer_dynamic("cartography::harmo.pal", 8)
+
+print(harmo_colors)
+```
+
+Now, I'll apply the custom color scheme to the agency type summary I
+redid earlier.
+
+```{r treemap_fig_1}
+ggplot(agency_summary,
+       aes(area = count,
+           fill = agency_type,
+           label = agency_type)) +
+  geom_treemap() +
+  geom_treemap_text(fontface = "bold",
+                    color = "white",
+                    place = "center",
+                    size = 0.75,
+                    grow = TRUE,
+                    reflow = TRUE,
+                    min.size = 0.75) + 
+  scale_fill_manual(values = harmo_colors,
+                    name = "Agency Type",
+                    labels = c("City",
+                               "County",
+                               "Other",
+                               "State Agency",
+                               "State Police",
+                               "Tribal",
+                               "Unclassified",
+                               "University or College")) +
+  theme_minimal() +
+  theme(legend.position = "right")
+```
+
+Yup, I think this looks good!
+
+<br>
+
+<hr>
+
+<hr>
+
+<br>
+
+## Recap
+
+#### **Question:**
+
+*How do agency types vary?*
+
+#### **Answer:**
+
+The treemap shows that the overall amount of agencies are located within
+the **"City"** agency type, and that the **"County"** and
+**"Unclassified"** agency types follow afterwards (in that order) as
+being the <ins>ones with the most dominance</ins> across the United
+States.
+
+Which, I think makes sense since geographically there are significantly more
+cities than counties, and segues into how these agency types are distributed.
+
+But *why would the FBI branch out by city instead of county?*
+
+<br>
+
+<hr>
+
+<hr>
+
+<br>
+
+## Distribution: Geographical Agency Types
+
+I'm now going to look into, **how the agencies are distributed
+geographically within each state?** But, first let's revisit the `df`
+data set.
+
+```{r view_df}
+diagnose(df)
+```
+
+Remember, that the `latitude` and `longitude` columns have 1,947 missing
+values. But, to confirm I will use the `diagnose()` function again.
+
+*Note: there can't be any missing coordinates for the mapping package(s)
+I'm considering using.*
+
+So, I'll have to filter out or impute those missing values.
+
+<br>
+
+But, first let me add two additional columns *(b4 I forget)*. One
+is to count the `agency_type` and the other is to get the overall
+percentages of the agency types in/for each `state`. This is nothing
+major just some basic aggregations.
+
+```{r agency_count}
+df <- df %>% 
+  group_by(state, 
+           agency_type) %>% 
+  mutate(agency_count = n())
+
+glimpse(df$agency_count)
+```
+
+```{r agency_percentage}
+df <- df %>% 
+  group_by(state) %>% 
+  mutate(agency_perc = agency_count / n() * 100.00)
+
+glimpse(df$agency_perc)
+```
+
+Good, both columns have been aggregated and saved to the `df` data set,
+successfully.
+
+<br>
+
+<hr>
+
+<hr>
+
+<br>
+
+## Dataframe: `df`
+
+For now let me view the `state_county` column's top 20 records and bottom 30 records.
+
+```{r countyDFList}
+state_countyList <- tibble(county = df$state_county)
+print(state_countyList, 20)
+```
+
+<br>
+
+Same table just now scrollable:
+
+```{r countyListView}
+# state_countyList %>%
+#   knitr::kable(format = "html") %>%
+#   scroll_box(height = "400px")
+```
+
+Now with a quick scroll I noticed "Not Specified" and abbreviated place naming
+conventions that I prefer to have spelled out (e.g., `"St Clair"`). So I'll do
+a basic normalization for white spaces and writing out abbreviated place names.
+
+I will not remove the "Not Specified" or 
+
+<br>
+
+I'll also view the `df` data set's highest counts.
+
+```{r countyHighestCounts}
+df %>%
+  group_by(df$state_county) %>%
+  tally() %>%
+  arrange(desc(n))
+```
+
+As you can see there are 2,362 county names.
+
+<br>
+
+<hr>
+
+<hr>
+
+<br>
+
+## Normalize Spatial Data Sets
+
+
+```{r dfNormal}
+df <- df %>%
+  mutate(state_county = str_to_title(str_trim(state_county))) %>%
+  mutate(state_county = str_replace_all(state_county, 
+                                        "\\bSt\\b", 
+                                        "Saint")) %>% 
+  mutate(state_county = str_remove_all(state_county, 
+                                       "\\b(Planning Region|Region)\\b")) %>%
+  mutate(state_county = str_trim(state_county)) %>% 
+  filter(state_county != "")
+```
+
+```{r viewNormalDF}
+datatable(df)
+```
+
+
+The `df` data sets have been successfully normalized.
+
+<br>
+
+#### View `df` Data Set 
+
+Let me view only the missing counts again for the `df` data set.
+
+```{r dfNAs}
+df %>% 
+  diagnose() %>% 
+  select(-unique_count,
+         -unique_rate) %>% 
+  filter(missing_count > 0) %>% 
+  arrange(desc(missing_count))
+```
+
+So, the `latitude`, `longitude`, and `nibrs_start_date` are the only
+columns that have missing values.
+
+<br>
+
+## Finalize Spatial Data Set
+
+```{r createGeometry}
+df_with_geom <- df %>%
+  mutate(
+    geometry = map2(longitude, latitude, function(lon, lat) {
+      if (!is.na(lon) & !is.na(lat)) st_point(c(lon, lat)) else st_geometrycollection()
+    })
+  )
+```
+
+```{r convertGeoSFC}
+df_sf <- st_sf(df_with_geom, 
+               crs = 4326)
+```
+
+```{r df_sfDiagnotics}
+cat("Total rows:", nrow(df_sf), "\n")
+cat("Rows with geometry:", sum(!st_is_empty(df_sf$geometry)), "\n")
+cat("Rows missing geometry:", sum(st_is_empty(df_sf$geometry)), "\n")
+```
+
+```{r df_sfColnames}
+colnames(df_sf)
+```
+
+```{r df_sfNAs}
+diagnose(df_sf)
+```
+
+My objective here is to retain every record, assign real geometry where possible,
+and avoid crashing when the geometry could not be created.
+
+<br>
+
+<hr>
+
+<hr>
+
+<br>
+
+## Viz: Distribution Map
+
+I will create a color scheme for the **agency_type** using the <ins>harmo.pal</ins>
+color scheme again. This is a basic plot.
+
+```{r agencyHarmoScheme}
+agency_type_harmo <- paletteer_dynamic("cartography::harmo.pal", 8)
+```
+
+```{r dfPlotSetup}
+dfPlot <- df_sf %>%
+  mutate(has_geometry = !st_is_empty(geometry)) %>% 
+  mutate(is_point = st_geometry_type(geometry) == "POINT") %>% 
+  mutate(coords = map_if(geometry, 
+                         is_point, st_coordinates, 
+                         .else = ~ matrix(c(NA_real_, NA_real_), 
+                                          ncol = 2)
+                         ), 
+         lon = map_dbl(coords, 1), 
+         lat = map_dbl(coords, 2), 
+         plausible_coords = !is.na(lat) & !is.na(lon) & 
+           between(lon, -130, -60) & between(lat, 20, 55)
+         )
+```
+
+```{r dfPlotGeoContext}
+us_states <- states(cb = TRUE, 
+                    year = 2022) %>% 
+  st_transform(crs = 4326)
+```
+
+```{r dfPlotBasic}
+ggplot() +
+  geom_sf(data = us_states, 
+          fill = "gray98", 
+          color = "gray80", 
+          size = 0.3) +
+  
+  geom_sf(data = dfPlot %>% 
+            filter(plausible_coords), 
+          aes(fill = agency_count), 
+          shape = 21, 
+          color = "white", 
+          stroke = 0.2, 
+          alpha = 0.9, 
+          size = 2) +
+  
+  geom_sf(data = dfPlot %>% 
+            filter(!plausible_coords), 
+          color = "red", 
+          shape = 4, 
+          size = 2, 
+          alpha = 0.6) + 
+  scale_fill_gradientn(colors = agency_type_harmo, name = "Agency Count") +
+  labs(title = "Agency Types and Counts",
+       subtitle = "Higher counts are deeper in color") +
+  coord_sf(xlim = c(-125, -65), 
+           ylim = c(25, 50), 
+           expand = TRUE) +
+  theme_void() +
+  theme(legend.position = "bottom")
+```
+
+<br>
+
+<hr>
+
+<hr>
+
+<br>
+
+## Session Info
+
+```{r sessionInfo}
+sessioninfo::session_info()
+```
+

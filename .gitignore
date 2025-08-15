@@ -1,0 +1,9 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+agencies/agencies_cache/*
+!agencies/agencies_files/
+!agencies/agencies.html
+!agencies/agencies.Rmd
+!agencies/downcute.css
