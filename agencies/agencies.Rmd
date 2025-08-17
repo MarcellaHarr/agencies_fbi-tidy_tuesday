@@ -43,6 +43,12 @@ library(purrr)
 library(tigris)
 library(ggpattern)
 library(ggrepel)
+library(tidyverse)
+library(osmdata)
+library(showtext)
+library(ggmap)
+library(rvest)
+library(scales)
 library(sessioninfo)
 ```
 
@@ -74,7 +80,7 @@ The `latitude` and `longitiude` columns are **numeric** data types,
 `nibrs_start_date` is a **date** data type, `is_nibrs` is a **logical**
 or Boolean (TRUE/FALSE) data type, and all the other columns are
 **character** datatypes. There are 1,947 **"NA"** for the latitude and
-longitude variables, 1,645 for the agency_type varibales, and 4,061 for the
+longitude variables, 1,645 for the agency_type variables, and 4,061 for the
 nibrs_start_date variables. Lastly, there are a total of nine agency
 types.
 
@@ -120,9 +126,9 @@ agency types.
 
 <br>
 
-## Plots
+#### Plots
 
-#### Summary bar plot
+##### Summary bar plot
 
 I will use a basic bar plot *(flip to have categories on the y-axis)* to
 see the variations:
@@ -144,7 +150,7 @@ hierarchies across the nine agency types.
 
 <br>
 
-#### Treemap
+##### Treemap
 
 I'm going to use the *treemapify* package, just because it integrates
 with ggplot well.
@@ -179,9 +185,9 @@ the visual more appealing.
 
 <br>
 
-## Testing
+#### Testing
 
-#### Test Concatenation Values
+##### Test Concatenation Values
 
 I'm going to test concatenating the `agency_type` values, **"Unknown"**
 and **"NA"** as mentioned previously.
@@ -204,7 +210,7 @@ names.
 
 <br>
 
-#### Test Shortening Values
+##### Test Shortening Values
 
 Here are the three values where I'm shortening their names:
   - **"Other State Agency"**
@@ -621,7 +627,9 @@ and avoid crashing when the geometry could not be created.
 ## Viz: Distribution Map
 
 I will create a color scheme for the **agency_type** using the <ins>harmo.pal</ins>
-color scheme again. This is a basic plot.
+color scheme again. This is a basic plot where I will create an additional col 
+that **excludes** the *NAs* for the <ins>latitude</ins> and <ins>longitude</ins> 
+columns.
 
 ```{r agencyHarmoScheme}
 agency_type_harmo <- paletteer_dynamic("cartography::harmo.pal", 8)
@@ -638,12 +646,15 @@ dfPlot <- df_sf %>%
                          ), 
          lon = map_dbl(coords, 1), 
          lat = map_dbl(coords, 2), 
-         plausible_coords = !is.na(lat) & !is.na(lon) & 
+         absent_coords = !is.na(lat) & !is.na(lon) & 
            between(lon, -130, -60) & between(lat, 20, 55)
          )
+
+print(dfPlot)
 ```
 
-```{r dfPlotGeoContext}
+```{r dfPlotGeoContext, echo=TRUE, results='hide'}
+# Base map/bottom layer
 us_states <- states(cb = TRUE, 
                     year = 2022) %>% 
   st_transform(crs = 4326)
@@ -651,13 +662,13 @@ us_states <- states(cb = TRUE,
 
 ```{r dfPlotBasic}
 ggplot() +
-  geom_sf(data = us_states, 
+  geom_sf(data = us_states, # bottom layer
           fill = "gray98", 
           color = "gray80", 
           size = 0.3) +
   
-  geom_sf(data = dfPlot %>% 
-            filter(plausible_coords), 
+  geom_sf(data = dfPlot %>%  # top layer
+            filter(absent_coords), 
           aes(fill = agency_count), 
           shape = 21, 
           color = "white", 
@@ -666,7 +677,7 @@ ggplot() +
           size = 2) +
   
   geom_sf(data = dfPlot %>% 
-            filter(!plausible_coords), 
+            filter(!absent_coords), 
           color = "red", 
           shape = 4, 
           size = 2, 
@@ -678,7 +689,8 @@ ggplot() +
            ylim = c(25, 50), 
            expand = TRUE) +
   theme_void() +
-  theme(legend.position = "bottom")
+  theme(legend.position = "bottom",
+        legend.key.width = unit(1.5, "cm"))
 ```
 
 <br>
@@ -688,6 +700,217 @@ ggplot() +
 <hr>
 
 <br>
+
+#### Visually Skewed
+
+The distribution map is not as clear as I'd hope. As it stands, it shows that my
+initial thought *(based on the treemap)* that there are more agencies in `cities`, 
+`counties`, and those that are `unclassified`. The map actually shows that 
+most of the U.S.A is dominate by area with very `low agency counts`, and that 
+Higher counts *(darker colors)* are more `rare` and not as clustered.
+
+Also, the dominant distribution towards the lower end of the legend, from those
+single agency counts, as well as, the high counts that are more concentrated 
+needs to visually represent the **spatial distribution** for better 
+understanding.
+
+```{r unskewDist}
+unskewPlot <- df_sf %>% 
+  mutate(has_geometry = !st_is_empty(geometry)) %>% 
+  mutate(is_point = st_geometry_type(geometry) == "POINT") %>% 
+  mutate(coords = map_if(geometry, 
+                         is_point, st_coordinates, 
+                         .else = ~ matrix(c(NA_real_, NA_real_),
+                                          ncol = 2)
+                         ), 
+         lon = map_dbl(coords, 1), 
+         lat = map_dbl(coords, 2), 
+         absent_coords = !is.na(lat) & !is.na(lon) & 
+           between(lon, -130, -60) & between(lat, 20, 55), 
+         log_agency_count = log1p(agency_count)  # log(agency_count + 1)
+         )
+```
+
+```{r statesUnskewDist, echo=TRUE, results='hide'}
+us_states_unskew <- states(cb = TRUE, year = 2022) %>% 
+  st_transform(crs = 4326)
+```
+
+```{r mapUnskewedDist}
+ggplot() + 
+  geom_sf(data = us_states_unskew, 
+          fill = "gray98", 
+          color = "gray80", 
+          size = 0.3) + 
+  geom_sf(data = unskewPlot %>% 
+            filter(absent_coords), 
+          aes(fill = log_agency_count), 
+          shape = 21, 
+          color = "white", 
+          stroke = 0.2, 
+          alpha = 0.9, 
+          size = 2) + 
+  geom_sf(data = unskewPlot %>% 
+            filter(!absent_coords), 
+          color = "red", 
+          shape = 4, 
+          size = 2, 
+          alpha = 0.6) + 
+  scale_fill_gradientn(colors = agency_type_harmo, 
+                       name = "Agency Count (log scale)", 
+                       labels = function(x) round(expm1(x)),# inverse of log1p 
+                       breaks = log1p(c(250, 500, 750)) # match original scale
+                       ) + 
+  labs(title = "Agency Types and Counts", 
+       subtitle = "Higher counts are deeper in color", 
+       caption = "Note: Agency counts are log-transformed to reduce skew"
+       ) + 
+  coord_sf(xlim = c(-125, -65), 
+           ylim = c(25, 50), 
+           expand = TRUE) + 
+  theme_void() + 
+  theme(legend.position = "bottom",
+        legend.key.width = unit(2.25, "cm"),
+        legend.text = element_text(size = 9.5),
+        legend.title = element_text(size =11)
+        )
+```
+
+<br>
+
+<hr>
+
+<hr>
+
+<br>
+
+#### Open Street Map (OSM)
+
+I want to see the `dfPlot` with more details, like with highways or rivers 
+for a city in my home state of New Jersey. So I'll use the open street map
+`osmdata` package demonstrated by **Phuong Linh** from 
+*RPubs*: **rpubs.com/Linh-LTP/894196**.
+
+To view the recognized features in OSM I'll use the *available_features()* 
+function, and to see a list of tags associated with a feature, I'll use the 
+*available_tags(feature)* function.
+
+```{r mapFeatures}
+# available features
+head(available_features(),
+      5)
+```
+
+```{r mapFtTag}
+# associated tags
+available_tags("highway")
+```
+
+Then, I'll get the bounding box **(bb)** for the place name. Here are some more
+attributes of the OSM package:
+  - the **opq** to add features as an overpass query object 
+  - the **add_osm_feature** to call features:
+    - the tag defined in *key* and types of features defined in *value* , where
+    both are called with a logical AND. 
+  - the **osmdata_sf** to query the tag and features as nodes.
+
+I'll then plot each type of the three features, I want `lrg_streets`, 
+`med_streets`, and `small_streets` into one combined features' plot.
+
+```{r mapCityState}
+# geographic city and state
+getbb("Newark New Jersey")
+```
+
+```{r lrgStreets}
+# use specific street categories
+lrg_streets <- getbb("Newark New Jersey") %>% 
+  opq() %>% 
+  add_osm_feature(key = "highway",
+                  value = c("motorway",
+                            "primary",
+                            "motorway_link",
+                            "primary_link")) %>% 
+  osmdata_sf()
+
+lrg_streets
+```
+
+```{r lrgStreetsPlot}
+ggplot() +
+  geom_sf(data = lrg_streets$osm_lines,
+          inherit.aes = FALSE,
+          color = "black")
+```
+
+```{r medStreets}
+med_Streets <- getbb("Newark New Jersey") %>% 
+  opq() %>% 
+  add_osm_feature(key = "highway",
+                  value = c("secondary",
+                            "tertiary",
+                            "secondary_link",
+                            "tertiary_link")) %>% 
+  osmdata_sf()
+```
+
+```{r medStreetsPlot}
+ggplot() +
+  geom_sf(data = med_Streets$osm_lines,
+          inherit.aes = FALSE,
+          color = "black")
+```
+
+```{r smStreets}
+small_streets <- getbb("Newark New Jersey") %>% 
+  opq() %>% 
+  add_osm_feature(key = "highway",
+                  value = c("roads",
+                            "emergency_access_point",
+                            "residential",
+                            "living_streets")) %>% 
+  osmdata_sf()
+
+small_streets
+```
+
+```{r smStreetsPlot}
+ggplot() +
+  geom_sf(data = small_streets$osm_lines,
+          inherit.aes = FALSE,
+          color = "black")
+```
+
+```{r newarkMapPlot}
+# adjust the map size & combine
+ggplot() +
+  geom_sf(data = med_Streets$osm_lines,
+          inherit.aes = FALSE,
+          color = "black",
+          size = .3,
+          alpha = .5) +
+  geom_sf(data = small_streets$osm_lines,
+          inherit.aes = FALSE,
+          color = "#666666",
+          size = .2,
+          alpha = .3) +
+  geom_sf(data = lrg_streets$osm_lines,
+          inherit.aes = FALSE,
+          color = "black",
+          size = .5,
+          alpha = .6) +
+  coord_sf(xlim = c(-74.25, -74.13),
+           ylim = c(40.67, 40.79))
+```
+
+<br>
+
+<hr>
+
+<hr>
+
+<br>
+
 
 ## Session Info
 
