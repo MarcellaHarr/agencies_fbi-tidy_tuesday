@@ -647,7 +647,8 @@ dfPlot <- df_sf %>%
          lon = map_dbl(coords, 1), 
          lat = map_dbl(coords, 2), 
          absent_coords = !is.na(lat) & !is.na(lon) & 
-           between(lon, -130, -60) & between(lat, 20, 55)
+           between(lon, -130, -60) & between(lat, 20, 55),
+           log_agency_count = log1p(agency_count)
          )
 
 print(dfPlot)
@@ -808,6 +809,7 @@ available_tags("highway")
 
 Then, I'll get the bounding box **(bb)** for the place name. Here are some more
 attributes of the OSM package:
+
   - the **opq** to add features as an overpass query object 
   - the **add_osm_feature** to call features:
     - the tag defined in *key* and types of features defined in *value* , where
@@ -911,6 +913,108 @@ ggplot() +
 
 <br>
 
+```{r}
+ggplot() + 
+  geom_sf(data = us_states_unskew, 
+          fill = "gray98", 
+          color = "gray80", 
+          size = 0.3) + 
+  geom_sf(data = unskewPlot %>% 
+            filter(absent_coords), 
+          aes(fill = log_agency_count), 
+          shape = 21, 
+          color = "white", 
+          stroke = 0.2, 
+          alpha = 0.9, 
+          size = 2) + 
+  geom_sf(data = unskewPlot %>% 
+            filter(!absent_coords), 
+          color = "red", 
+          shape = 4, 
+          size = 2, 
+          alpha = 0.6) + 
+  scale_fill_gradientn(colors = agency_type_harmo, 
+                       name = "Agency Count (log scale)", 
+                       labels = function(x) round(expm1(x)),# inverse of log1p 
+                       breaks = log1p(c(250, 500, 750)) # match original scale
+                       ) + 
+  labs(title = "Agency Types and Counts", 
+       subtitle = "Higher counts are deeper in color", 
+       caption = "Note: Agency counts are log-transformed to reduce skew"
+       ) + 
+  coord_sf(xlim = c(-74.27, -74.11), 
+           ylim = c(40.66, 40.80), 
+           expand = TRUE) + 
+  theme_void() + 
+  theme(legend.position = "bottom",
+        legend.key.width = unit(2.25, "cm"),
+        legend.text = element_text(size = 9.5),
+        legend.title = element_text(size =11)
+        )
+```
+
+<br>
+
+<hr>
+
+<hr>
+
+<br>
+
+```{r}
+ggplot() + 
+  geom_sf(data = us_states_unskew, 
+          fill = "white",
+          # color = "gray80",
+          size = 0.3) +
+  geom_sf(data = med_Streets$osm_lines, 
+          inherit.aes = FALSE,
+          color = "black",
+          size = 0.3,
+          alpha = 0.5) +
+  geom_sf(data = small_streets$osm_lines, 
+          inherit.aes = FALSE,
+          color = "#666666",
+          size = 0.2,
+          alpha = 0.3) + 
+  geom_sf(data = lrg_streets$osm_lines, 
+          inherit.aes = FALSE, 
+          color = "black",
+          size = 0.5,
+          alpha = 0.6) +
+  geom_sf(data = dfPlot %>% 
+            filter(absent_coords), 
+          aes(fill = log_agency_count),
+          shape = 21,
+          color = "white",
+          stroke = 0.2,
+          alpha = 0.9,
+          size = 2) + 
+  geom_sf(data = dfPlot %>% 
+            filter(!absent_coords), 
+          color = "red",
+          shape = 4,
+          size = 2,
+          alpha = 0.6) +
+  scale_fill_gradientn(colors = agency_type_harmo, 
+                       guide = "none"
+                       ) +
+  labs(title = "Agency Types and Counts in Newark, NJ", 
+       subtitle = "Street overlays and log-scaled agency density") + 
+  coord_sf(xlim = c(-74.27, -74.11), 
+           ylim = c(40.66, 40.80), 
+           expand = FALSE) +
+  theme(legend.position = "none")+
+  theme_void()
+```
+
+<br>
+
+<hr>
+
+<hr>
+
+<br>
 
 ## Session Info
 
